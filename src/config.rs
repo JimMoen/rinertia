@@ -21,10 +21,12 @@ pub struct DeviceConfig {
 pub struct ScrollConfig {
     pub enabled: Option<bool>,
     pub damping: Option<f64>,
-    pub decay_mode: Option<String>,
+    pub damping_curve: Option<String>,
     pub phase_threshold: Option<f64>,
     pub linear_decel_ms: Option<i32>,
     pub linear_stop_hires: Option<i32>,
+    pub time_constant_ms: Option<f64>,
+    pub stop_threshold: Option<f64>,
     pub min_velocity: Option<f64>,
     pub scroll_factor: Option<f64>,
     pub tp_to_hires: Option<f64>,
@@ -46,10 +48,12 @@ pub struct InterruptConfig {
 
 pub const DEFAULT_MODE: &str = "scroll";
 pub const DEFAULT_DAMPING: f64 = 0.05;
-pub const DEFAULT_DECAY_MODE: &str = "dual";
+pub const DEFAULT_DAMPING_CURVE: &str = "dual";
 pub const DEFAULT_PHASE_THRESHOLD: f64 = 360.0;
 pub const DEFAULT_LINEAR_DECEL_MS: i32 = 384;
 pub const DEFAULT_LINEAR_STOP_HIRES: i32 = 1;
+pub const DEFAULT_TIME_CONSTANT_MS: f64 = 325.0;
+pub const DEFAULT_STOP_THRESHOLD: f64 = 60.0;
 pub const DEFAULT_MIN_SCROLL_VELOCITY: f64 = 120.0;
 pub const DEFAULT_SCROLL_FACTOR: f64 = 1.0;
 pub const DEFAULT_TP_TO_HIRES: f64 = 5.0;
@@ -95,10 +99,10 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
         damping: cli
             .damping
             .unwrap_or_else(|| scroll.and_then(|s| s.damping).unwrap_or(DEFAULT_DAMPING)),
-        decay_mode: cli.decay_mode.clone().unwrap_or_else(|| {
+        damping_curve: cli.damping_curve.clone().unwrap_or_else(|| {
             scroll
-                .and_then(|s| s.decay_mode.clone())
-                .unwrap_or_else(|| DEFAULT_DECAY_MODE.into())
+                .and_then(|s| s.damping_curve.clone())
+                .unwrap_or_else(|| DEFAULT_DAMPING_CURVE.into())
         }),
         phase_threshold: cli.phase_threshold.unwrap_or_else(|| {
             scroll
@@ -114,6 +118,16 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
             scroll
                 .and_then(|s| s.linear_stop_hires)
                 .unwrap_or(DEFAULT_LINEAR_STOP_HIRES)
+        }),
+        time_constant_ms: cli.time_constant_ms.unwrap_or_else(|| {
+            scroll
+                .and_then(|s| s.time_constant_ms)
+                .unwrap_or(DEFAULT_TIME_CONSTANT_MS)
+        }),
+        stop_threshold: cli.stop_threshold.unwrap_or_else(|| {
+            scroll
+                .and_then(|s| s.stop_threshold)
+                .unwrap_or(DEFAULT_STOP_THRESHOLD)
         }),
         min_scroll_velocity: cli.min_scroll_velocity.unwrap_or_else(|| {
             scroll
@@ -155,5 +169,53 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_LOG_LEVEL.into())
         }),
+    }
+}
+
+pub fn warn_unused_curve_params(cli: &crate::Args, resolved: &crate::ResolvedArgs) {
+    let curve = resolved.damping_curve.as_str();
+    match curve {
+        "expo" => {
+            let unused: Vec<&str> = [
+                cli.phase_threshold.map(|_| "--phase-threshold"),
+                cli.linear_decel_ms.map(|_| "--linear-decel-ms"),
+                cli.linear_stop_hires.map(|_| "--linear-stop-hires"),
+                cli.time_constant_ms.map(|_| "--time-constant-ms"),
+                cli.stop_threshold.map(|_| "--stop-threshold"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            for p in &unused {
+                log::warn!("{} has no effect with damping_curve=\"expo\"", p);
+            }
+        }
+        "dual" => {
+            let unused: Vec<&str> = [
+                cli.time_constant_ms.map(|_| "--time-constant-ms"),
+                cli.stop_threshold.map(|_| "--stop-threshold"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            for p in &unused {
+                log::warn!("{} has no effect with damping_curve=\"dual\"", p);
+            }
+        }
+        "macos" => {
+            let unused: Vec<&str> = [
+                cli.damping.map(|_| "--damping"),
+                cli.phase_threshold.map(|_| "--phase-threshold"),
+                cli.linear_decel_ms.map(|_| "--linear-decel-ms"),
+                cli.linear_stop_hires.map(|_| "--linear-stop-hires"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            for p in &unused {
+                log::warn!("{} has no effect with damping_curve=\"macos\"", p);
+            }
+        }
+        _ => {}
     }
 }

@@ -38,9 +38,9 @@ pub struct Args {
     #[arg(long)]
     pub damping: Option<f64>,
 
-    /// Decay mode: "dual" = exponential then linear tail, "expo" = pure exponential
+    /// Damping curve: "dual" (expo + linear tail), "expo" (pure exponential), "macos" (macOS-style time constant)
     #[arg(long)]
-    pub decay_mode: Option<String>,
+    pub damping_curve: Option<String>,
 
     /// Velocity threshold to transition from exponential to linear phase (hires per 8ms)
     #[arg(long)]
@@ -53,6 +53,14 @@ pub struct Args {
     /// Linear phase stops when output reaches this value (hires units)
     #[arg(long)]
     pub linear_stop_hires: Option<i32>,
+
+    /// [macos curve] Time constant in ms controlling deceleration feel (default: 325)
+    #[arg(long)]
+    pub time_constant_ms: Option<f64>,
+
+    /// [macos curve] Velocity threshold to stop momentum (hires/sec, default: 60.0)
+    #[arg(long)]
+    pub stop_threshold: Option<f64>,
 
     /// Minimum velocity to trigger scroll momentum
     #[arg(long)]
@@ -101,10 +109,12 @@ pub struct ResolvedArgs {
     pub device_name: Option<String>,
     pub mode: String,
     pub damping: f64,
-    pub decay_mode: String,
+    pub damping_curve: String,
     pub phase_threshold: f64,
     pub linear_decel_ms: i32,
     pub linear_stop_hires: i32,
+    pub time_constant_ms: f64,
+    pub stop_threshold: f64,
     pub min_scroll_velocity: f64,
     pub scroll_factor: f64,
     pub tp_to_hires: f64,
@@ -160,6 +170,7 @@ fn main() -> Result<()> {
     if cli.config.is_some() {
         log::info!("Loaded config: {}", cli.config.as_deref().unwrap());
     }
+    config::warn_unused_curve_params(&cli, &args);
 
     let touchpad_path =
         device_discovery::find_touchpad(args.device.as_deref(), args.device_name.as_deref())?;

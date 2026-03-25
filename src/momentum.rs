@@ -9,6 +9,7 @@ enum EngineState {
     Idle,
     ScrollMomentum,
     ScrollLinearDecel,
+    ScrollMacos,
     PointerMomentum,
 }
 
@@ -17,11 +18,13 @@ pub fn run_engine(
     mut vdev: Option<VirtualDevice>,
     args: &crate::ResolvedArgs,
 ) {
+    let damping_curve = args.damping_curve.as_str();
     let retention = (1.0 - args.damping.clamp(0.0, 0.99)) as f64;
-    let dual_phase = args.decay_mode == "dual";
     let phase_threshold = args.phase_threshold;
     let linear_decel_ms = args.linear_decel_ms as f64;
     let linear_stop_hires = args.linear_stop_hires;
+    let time_constant_ms = args.time_constant_ms;
+    let stop_threshold = args.stop_threshold;
     let scroll_factor = args.scroll_factor;
     let pointer_drag = args.pointer_drag;
     let pointer_speed_factor = args.pointer_speed_factor;
@@ -53,10 +56,14 @@ pub fn run_engine(
                     } => {
                         velocity = velocity_hires_per_sec;
                         axis = msg_axis;
-                        state = EngineState::ScrollMomentum;
+                        state = match damping_curve {
+                            "macos" => EngineState::ScrollMacos,
+                            _ => EngineState::ScrollMomentum,
+                        };
                         last_tick = Instant::now();
                         log::debug!(
-                            "ScrollMomentum start: velocity={:.1} axis={:?}",
+                            "{:?} start: velocity={:.1} axis={:?}",
+                            state,
                             velocity,
                             axis
                         );
@@ -119,7 +126,7 @@ pub fn run_engine(
                 let delta_hires = velocity * (dt_ms / 1000.0) * scroll_factor;
                 let emit_hires = delta_hires.round() as i32;
 
-                if dual_phase {
+                if damping_curve == "dual" {
                     let hires_per_8ms = velocity.abs() * (8.0 / 1000.0) * scroll_factor;
                     if hires_per_8ms < phase_threshold {
                         linear_decel_rate = velocity.abs() / (linear_decel_ms / 1000.0);
@@ -198,6 +205,65 @@ pub fn run_engine(
                 }
 
                 emit_scroll(&mut vdev, axis, emit_hires);
+            }
+
+            // v(t) = v₀ × exp(-t / τ)
+            EngineState::ScrollMacos => {
+                let msg = rx.recv_timeout(Duration::from_millis(1));
+                match msg {
+                    Ok(MomentumMessage::Stop) => {
+                        log::debug!("ScrollMacos interrupted by Stop");
+                        velocity = 0.0;
+                        state = EngineState::Idle;
+                        continue;
+                    }
+                    Ok(MomentumMessage::StartScroll {
+                        velocity_hires_per_sec,
+                        axis: msg_axis,
+                    }) => {
+                        let same_direction =
+                            msg_axis == axis && (velocity_hires_per_sec > 0.0) == (velocity > 0.0);
+                        if same_direction {
+                            log::debug!("Same-direction scroll during macos momentum, going Idle");
+                        } else {
+                            log::debug!(
+                                "Opposite-direction scroll during macos momentum, stopping"
+                            );
+                        }
+                        velocity = 0.0;
+                        state = EngineState::Idle;
+                        continue;
+                    }
+                    Ok(MomentumMessage::StartPointer { .. }) => {}
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        log::info!("Channel closed, engine shutting down");
+                        return;
+                    }
+                }
+
+                let dt_ms = last_tick.elapsed().as_secs_f64() * 1000.0;
+                last_tick = Instant::now();
+
+                velocity *= (-dt_ms / time_constant_ms).exp();
+
+                if velocity.abs() < stop_threshold {
+                    log::debug!(
+                        "ScrollMacos stop: |velocity|={:.1} < {:.1}",
+                        velocity.abs(),
+                        stop_threshold
+                    );
+                    velocity = 0.0;
+                    state = EngineState::Idle;
+                    continue;
+                }
+
+                let delta_hires = velocity * (dt_ms / 1000.0) * scroll_factor;
+                let emit_hires = delta_hires.round() as i32;
+
+                if emit_hires != 0 {
+                    emit_scroll(&mut vdev, axis, emit_hires);
+                }
             }
 
             EngineState::PointerMomentum => {

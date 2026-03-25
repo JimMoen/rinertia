@@ -8,11 +8,25 @@
 
 [scroll]
 enabled = true
+
+# Damping curve type: "dual", "expo", or "macos"
+#   dual  — exponential decay + linear tail (default)
+#   expo  — pure exponential decay
+#   macos — macOS-style time-constant decay
+damping_curve = "dual"
+
+# --- expo / dual shared ---
 damping = 0.05
-decay_mode = "dual"
+
+# --- dual only ---
 phase_threshold = 360.0
 linear_decel_ms = 384
 linear_stop_hires = 1
+
+# --- macos only ---
+# time_constant_ms = 325.0
+# stop_threshold = 60.0
+
 min_velocity = 120.0
 scroll_factor = 1.0
 tp_to_hires = 5.0
