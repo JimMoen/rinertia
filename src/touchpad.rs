@@ -107,8 +107,12 @@ pub fn run_listener(
 
     let mut multitouch_ts: u64 = 0;
     let mut current_ts = time::SystemTime::UNIX_EPOCH;
+    // Suppresses the Stop from BTN_TOOL_FINGER=1 that arrives in the same
+    // SYN_REPORT frame as a BTN_TOOL_DOUBLETAP=0 which just launched momentum.
+    let mut momentum_just_started;
 
     while let Ok(events) = device.fetch_events() {
+        momentum_just_started = false;
         for event in events {
             current_ts = event.timestamp();
             log::trace!("Event: {:?} = {}", event.kind(), event.value());
@@ -150,12 +154,21 @@ pub fn run_listener(
                 InputEventKind::Key(key) => match key {
                     Key::BTN_TOOL_FINGER => {
                         if event.value() == 1 {
+                            // Any finger touch interrupts active momentum — user is
+                            // reaching for the touchpad, so continuing to emit scroll
+                            // events would send them to the wrong window.
+                            // Skip if momentum was just started in this same SYN_REPORT
+                            // frame (two-finger → one-finger transition).
+                            if !momentum_just_started {
+                                let _ = tx.send(MomentumMessage::Stop);
+                            }
+
                             // BTN_TOOL_FINGER=1 fires when:
                             //   a) First finger touches (Idle → OneFingerMove)
                             //   b) Second finger lifts during two-finger scroll
                             //      (BTN_TOOL_DOUBLETAP=0 + BTN_TOOL_FINGER=1 in same frame)
                             // Case (b) is handled by BTN_TOOL_DOUBLETAP=0 already computing
-                            // velocity and transitioning to Idle. Don't interrupt here.
+                            // velocity and transitioning to Idle.
                             if state == ListenerState::Idle {
                                 state = ListenerState::OneFingerMove;
                                 ptr_prev_x = ptr_x;
@@ -227,6 +240,7 @@ pub fn run_listener(
                                         velocity_hires_per_sec: velocity,
                                         axis,
                                     });
+                                    momentum_just_started = true;
                                 } else {
                                     log::debug!(
                                         "Scroll too slow: vel_y={:.1} vel_x={:.1} (threshold={})",
