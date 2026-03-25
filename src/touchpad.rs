@@ -2,7 +2,7 @@ use evdev::{AbsoluteAxisType, InputEventKind, Key};
 use std::sync::mpsc;
 use std::time;
 
-use crate::{Args, MomentumMessage, ScrollAxis};
+use crate::{MomentumMessage, ResolvedArgs, ScrollAxis};
 
 const RING_SIZE: usize = 8;
 const VELOCITY_SAMPLES: usize = 4;
@@ -80,7 +80,11 @@ fn timestamp_to_us(ts: time::SystemTime) -> u64 {
         .as_micros() as u64
 }
 
-pub fn run_listener(mut device: evdev::Device, tx: mpsc::Sender<MomentumMessage>, args: &Args) {
+pub fn run_listener(
+    mut device: evdev::Device,
+    tx: mpsc::Sender<MomentumMessage>,
+    args: &ResolvedArgs,
+) {
     let enable_scroll = args.mode == "scroll" || args.mode == "both";
     let enable_pointer = args.mode == "pointer" || args.mode == "both";
     let multitouch_cooldown_us = args.multitouch_cooldown * 1000;

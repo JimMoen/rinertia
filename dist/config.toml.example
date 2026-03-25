@@ -1,0 +1,30 @@
+# rinertia example config
+# All fields are optional. CLI arguments override config values.
+# Omitted fields use built-in defaults.
+
+[device]
+# path = "/dev/input/event9"
+# name = "ELAN"
+
+[scroll]
+enabled = true
+damping = 0.05
+decay_mode = "dual"
+phase_threshold = 360.0
+linear_decel_ms = 384
+linear_stop_hires = 1
+min_velocity = 120.0
+scroll_factor = 1.0
+tp_to_hires = 5.0
+multitouch_cooldown = 500
+
+[pointer]
+enabled = false
+drag = 0.15
+speed_factor = 0.0075
+min_velocity = 2000.0
+
+[interrupt]
+enabled = true
+
+# log_level = "info"

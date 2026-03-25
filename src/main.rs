@@ -4,6 +4,7 @@ use log;
 use std::sync::mpsc;
 use std::thread;
 
+mod config;
 mod device_discovery;
 mod interrupt;
 mod momentum;
@@ -17,6 +18,10 @@ mod virtual_device;
 #[derive(Parser, Debug, Clone)]
 #[command(name = "rinertia", version, about)]
 pub struct Args {
+    /// Path to TOML config file
+    #[arg(short, long)]
+    pub config: Option<String>,
+
     /// Touchpad device path (auto-detect if omitted)
     #[arg(short, long)]
     pub device: Option<String>,
@@ -25,57 +30,57 @@ pub struct Args {
     #[arg(short = 'n', long)]
     pub device_name: Option<String>,
 
-    /// Operating mode
-    #[arg(long, default_value = "scroll", value_parser = ["scroll", "pointer", "both"])]
-    pub mode: String,
+    /// Operating mode: scroll, pointer, both
+    #[arg(long)]
+    pub mode: Option<String>,
 
     /// Damping coefficient (0.0 ~ 1.0). Higher = more resistance = faster deceleration
-    #[arg(long, default_value_t = 0.05)]
-    pub damping: f64,
+    #[arg(long)]
+    pub damping: Option<f64>,
 
     /// Decay mode: "dual" = exponential then linear tail, "expo" = pure exponential
-    #[arg(long, default_value = "dual", value_parser = ["dual", "expo"])]
-    pub decay_mode: String,
+    #[arg(long)]
+    pub decay_mode: Option<String>,
 
-    /// Velocity threshold to transition from exponential to linear phase (hires per 8ms, only for dual mode)
-    #[arg(long, default_value_t = 360.0)]
-    pub phase_threshold: f64,
+    /// Velocity threshold to transition from exponential to linear phase (hires per 8ms)
+    #[arg(long)]
+    pub phase_threshold: Option<f64>,
 
-    /// Duration of linear deceleration phase in ms (only for dual mode)
-    #[arg(long, default_value_t = 384)]
-    pub linear_decel_ms: i32,
+    /// Duration of linear deceleration phase in ms
+    #[arg(long)]
+    pub linear_decel_ms: Option<i32>,
 
-    /// Linear phase stops when output reaches this value (hires units, only for dual mode)
-    #[arg(long, default_value_t = 1)]
-    pub linear_stop_hires: i32,
+    /// Linear phase stops when output reaches this value (hires units)
+    #[arg(long)]
+    pub linear_stop_hires: Option<i32>,
 
-    /// Minimum velocity (hires/sec after tp_to_hires conversion) to trigger scroll momentum
-    #[arg(long, default_value_t = 120.0)]
-    pub min_scroll_velocity: f64,
+    /// Minimum velocity to trigger scroll momentum
+    #[arg(long)]
+    pub min_scroll_velocity: Option<f64>,
 
     /// Scroll speed multiplier
-    #[arg(long, default_value_t = 1.0)]
-    pub scroll_factor: f64,
+    #[arg(long)]
+    pub scroll_factor: Option<f64>,
 
-    /// Touchpad-to-hires conversion factor (device-specific, adjust if scroll is too fast/slow)
-    #[arg(long, default_value_t = 5.0)]
-    pub tp_to_hires: f64,
+    /// Touchpad-to-hires conversion factor
+    #[arg(long)]
+    pub tp_to_hires: Option<f64>,
 
     /// Drag coefficient for pointer inertia (0.0 ~ 1.0)
-    #[arg(long, default_value_t = 0.15)]
-    pub pointer_drag: f64,
+    #[arg(long)]
+    pub pointer_drag: Option<f64>,
 
     /// Scale factor from touchpad units to virtual mouse units
-    #[arg(long, default_value_t = 0.0075)]
-    pub pointer_speed_factor: f64,
+    #[arg(long)]
+    pub pointer_speed_factor: Option<f64>,
 
     /// Minimum touchpad speed to trigger pointer inertia
-    #[arg(long, default_value_t = 2000.0)]
-    pub pointer_min_velocity: f64,
+    #[arg(long)]
+    pub pointer_min_velocity: Option<f64>,
 
-    /// Multitouch cooldown in ms (prevents inertia after gestures)
-    #[arg(long, default_value_t = 500)]
-    pub multitouch_cooldown: u64,
+    /// Multitouch cooldown in ms
+    #[arg(long)]
+    pub multitouch_cooldown: Option<u64>,
 
     /// Disable keyboard/mouse interrupt detection
     #[arg(long)]
@@ -86,7 +91,29 @@ pub struct Args {
     pub dry: bool,
 
     /// Log level (off, error, warn, info, debug, trace)
-    #[arg(long, default_value = "info")]
+    #[arg(long)]
+    pub log_level: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedArgs {
+    pub device: Option<String>,
+    pub device_name: Option<String>,
+    pub mode: String,
+    pub damping: f64,
+    pub decay_mode: String,
+    pub phase_threshold: f64,
+    pub linear_decel_ms: i32,
+    pub linear_stop_hires: i32,
+    pub min_scroll_velocity: f64,
+    pub scroll_factor: f64,
+    pub tp_to_hires: f64,
+    pub pointer_drag: f64,
+    pub pointer_speed_factor: f64,
+    pub pointer_min_velocity: f64,
+    pub multitouch_cooldown: u64,
+    pub no_interrupt: bool,
+    pub dry: bool,
     pub log_level: String,
 }
 
@@ -110,7 +137,17 @@ pub enum ScrollAxis {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let cli = Args::parse();
+
+    let cfg = match &cli.config {
+        Some(path) => {
+            let p = std::path::Path::new(path);
+            config::load(p)?
+        }
+        None => config::Config::default(),
+    };
+
+    let args = config::resolve(&cli, &cfg);
 
     env_logger::Builder::new()
         .filter_module(
@@ -119,6 +156,10 @@ fn main() -> Result<()> {
         )
         .parse_default_env()
         .init();
+
+    if cli.config.is_some() {
+        log::info!("Loaded config: {}", cli.config.as_deref().unwrap());
+    }
 
     let touchpad_path =
         device_discovery::find_touchpad(args.device.as_deref(), args.device_name.as_deref())?;

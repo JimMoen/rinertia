@@ -15,7 +15,7 @@ enum EngineState {
 pub fn run_engine(
     rx: mpsc::Receiver<MomentumMessage>,
     mut vdev: Option<VirtualDevice>,
-    args: &crate::Args,
+    args: &crate::ResolvedArgs,
 ) {
     let retention = (1.0 - args.damping.clamp(0.0, 0.99)) as f64;
     let dual_phase = args.decay_mode == "dual";
