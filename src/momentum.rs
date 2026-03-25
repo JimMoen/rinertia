@@ -4,11 +4,14 @@ use std::time::{Duration, Instant};
 use crate::virtual_device::VirtualDevice;
 use crate::{MomentumMessage, ScrollAxis};
 
+const SCROLL_TICK_MS: u64 = 8;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum EngineState {
     Idle,
     ScrollMomentum,
     ScrollLinearDecel,
+    ScrollTailEmit,
     ScrollMacos,
     PointerMomentum,
 }
@@ -25,6 +28,7 @@ pub fn run_engine(
     let linear_stop_hires = args.linear_stop_hires;
     let time_constant_ms = args.time_constant_ms;
     let stop_threshold = args.stop_threshold;
+    let tail_scroll_ms = args.tail_scroll_ms as f64;
     let scroll_factor = args.scroll_factor;
     let pointer_drag = args.pointer_drag;
     let pointer_speed_factor = args.pointer_speed_factor;
@@ -33,8 +37,11 @@ pub fn run_engine(
     let mut velocity: f64 = 0.0;
     let mut axis = ScrollAxis::Vertical;
     let mut last_tick = Instant::now();
+    let mut hires_accumulator: f64 = 0.0;
 
     let mut linear_decel_rate: f64 = 0.0;
+    let mut tail_sign: i32 = 1;
+    let mut tail_elapsed_ms: f64 = 0.0;
 
     let mut vx: f64 = 0.0;
     let mut vy: f64 = 0.0;
@@ -56,6 +63,7 @@ pub fn run_engine(
                     } => {
                         velocity = velocity_hires_per_sec;
                         axis = msg_axis;
+                        hires_accumulator = 0.0;
                         state = match damping_curve {
                             "macos" => EngineState::ScrollMacos,
                             _ => EngineState::ScrollMomentum,
@@ -79,13 +87,8 @@ pub fn run_engine(
                 }
             }
 
-            // Dual-phase scroll momentum ported from waynaptics ScrollInterceptor:
-            //   Phase 1 (ScrollMomentum): Exponential decay — velocity is multiplied by
-            //   retention^(dt/16) each tick, where retention = 1.0 - damping.
-            //   Phase 2 (ScrollLinearDecel): When velocity drops below a threshold, switch
-            //   to constant deceleration rate for a clean stop without asymptotic crawl.
             EngineState::ScrollMomentum => {
-                let msg = rx.recv_timeout(Duration::from_millis(1));
+                let msg = rx.recv_timeout(Duration::from_millis(SCROLL_TICK_MS));
                 match msg {
                     Ok(MomentumMessage::Stop) => {
                         log::debug!("ScrollMomentum interrupted by Stop");
@@ -119,12 +122,11 @@ pub fn run_engine(
                 let dt_ms = last_tick.elapsed().as_secs_f64() * 1000.0;
                 last_tick = Instant::now();
 
-                // Time-corrected damping: normalize to 16ms reference frame so decay
-                // rate is independent of actual tick interval.
                 velocity *= retention.powf(dt_ms / 16.0);
 
-                let delta_hires = velocity * (dt_ms / 1000.0) * scroll_factor;
-                let emit_hires = delta_hires.round() as i32;
+                hires_accumulator += velocity * (dt_ms / 1000.0) * scroll_factor;
+                let emit_hires = hires_accumulator.trunc() as i32;
+                hires_accumulator -= emit_hires as f64;
 
                 if damping_curve == "dual" {
                     let hires_per_8ms = velocity.abs() * (8.0 / 1000.0) * scroll_factor;
@@ -137,22 +139,37 @@ pub fn run_engine(
                             velocity,
                             linear_decel_rate
                         );
+                        if emit_hires != 0 {
+                            emit_scroll(&mut vdev, axis, emit_hires);
+                        }
                         continue;
                     }
-                } else if emit_hires == 0 {
-                    log::debug!("Expo decay: velocity decayed to zero output");
-                    velocity = 0.0;
-                    state = EngineState::Idle;
+                } else if emit_hires == 0 && velocity.abs() < stop_threshold {
+                    log::debug!("Expo decay: velocity below threshold");
+                    enter_tail_or_idle(
+                        &mut state,
+                        &mut velocity,
+                        &mut tail_sign,
+                        &mut tail_elapsed_ms,
+                        &mut last_tick,
+                        tail_scroll_ms,
+                    );
                     continue;
                 }
 
                 if emit_hires != 0 {
                     emit_scroll(&mut vdev, axis, emit_hires);
+                    log::debug!(
+                        "ExpoDecay emit: hires={} vel={:.1} dt={:.2}ms",
+                        emit_hires,
+                        velocity,
+                        dt_ms
+                    );
                 }
             }
 
             EngineState::ScrollLinearDecel => {
-                let msg = rx.recv_timeout(Duration::from_millis(1));
+                let msg = rx.recv_timeout(Duration::from_millis(SCROLL_TICK_MS));
                 match msg {
                     Ok(MomentumMessage::Stop) => {
                         log::debug!("LinearDecel interrupted by Stop");
@@ -181,35 +198,63 @@ pub fn run_engine(
                 velocity -= sign * linear_decel_rate * (dt_ms / 1000.0);
 
                 if sign * velocity <= 0.0 {
-                    log::debug!("LinearDecel: velocity crossed zero, going Idle");
+                    log::debug!("LinearDecel: velocity crossed zero");
                     velocity = 0.0;
-                    state = EngineState::Idle;
+                    enter_tail_or_idle(
+                        &mut state,
+                        &mut velocity,
+                        &mut tail_sign,
+                        &mut tail_elapsed_ms,
+                        &mut last_tick,
+                        tail_scroll_ms,
+                    );
+                    if tail_scroll_ms > 0.0 {
+                        tail_sign = if sign > 0.0 { 1 } else { -1 };
+                    }
                     continue;
                 }
 
-                let delta_hires = velocity * (dt_ms / 1000.0) * scroll_factor;
-                let mut emit_hires = delta_hires.round() as i32;
-                if emit_hires == 0 {
-                    emit_hires = if velocity > 0.0 { 1 } else { -1 };
-                }
+                hires_accumulator += velocity * (dt_ms / 1000.0) * scroll_factor;
+                let emit_hires = hires_accumulator.trunc() as i32;
+                hires_accumulator -= emit_hires as f64;
 
-                if emit_hires.abs() <= linear_stop_hires {
+                if emit_hires.abs() <= linear_stop_hires && emit_hires != 0 {
                     log::debug!(
                         "LinearDecel stop: |hires|={} <= {}",
                         emit_hires.abs(),
                         linear_stop_hires
                     );
+                    emit_scroll(&mut vdev, axis, emit_hires);
+                    let dir = if emit_hires > 0 { 1 } else { -1 };
                     velocity = 0.0;
-                    state = EngineState::Idle;
+                    enter_tail_or_idle(
+                        &mut state,
+                        &mut velocity,
+                        &mut tail_sign,
+                        &mut tail_elapsed_ms,
+                        &mut last_tick,
+                        tail_scroll_ms,
+                    );
+                    if tail_scroll_ms > 0.0 {
+                        tail_sign = dir;
+                    }
                     continue;
                 }
 
-                emit_scroll(&mut vdev, axis, emit_hires);
+                if emit_hires != 0 {
+                    emit_scroll(&mut vdev, axis, emit_hires);
+                    log::debug!(
+                        "LinearDecel emit: hires={} vel={:.1} dt={:.2}ms",
+                        emit_hires,
+                        velocity,
+                        dt_ms
+                    );
+                }
             }
 
             // v(t) = v₀ × exp(-t / τ)
             EngineState::ScrollMacos => {
-                let msg = rx.recv_timeout(Duration::from_millis(1));
+                let msg = rx.recv_timeout(Duration::from_millis(SCROLL_TICK_MS));
                 match msg {
                     Ok(MomentumMessage::Stop) => {
                         log::debug!("ScrollMacos interrupted by Stop");
@@ -253,17 +298,64 @@ pub fn run_engine(
                         velocity.abs(),
                         stop_threshold
                     );
-                    velocity = 0.0;
-                    state = EngineState::Idle;
+                    enter_tail_or_idle(
+                        &mut state,
+                        &mut velocity,
+                        &mut tail_sign,
+                        &mut tail_elapsed_ms,
+                        &mut last_tick,
+                        tail_scroll_ms,
+                    );
                     continue;
                 }
 
-                let delta_hires = velocity * (dt_ms / 1000.0) * scroll_factor;
-                let emit_hires = delta_hires.round() as i32;
+                hires_accumulator += velocity * (dt_ms / 1000.0) * scroll_factor;
+                let emit_hires = hires_accumulator.trunc() as i32;
+                hires_accumulator -= emit_hires as f64;
 
                 if emit_hires != 0 {
                     emit_scroll(&mut vdev, axis, emit_hires);
                 }
+            }
+
+            EngineState::ScrollTailEmit => {
+                let msg = rx.recv_timeout(Duration::from_millis(SCROLL_TICK_MS));
+                match msg {
+                    Ok(MomentumMessage::Stop) => {
+                        log::debug!("TailEmit interrupted by Stop");
+                        state = EngineState::Idle;
+                        continue;
+                    }
+                    Ok(MomentumMessage::StartScroll { .. }) => {
+                        log::debug!("New scroll during TailEmit, going Idle");
+                        state = EngineState::Idle;
+                        continue;
+                    }
+                    Ok(MomentumMessage::StartPointer { .. }) => {}
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        log::info!("Channel closed, engine shutting down");
+                        return;
+                    }
+                }
+
+                let dt_ms = last_tick.elapsed().as_secs_f64() * 1000.0;
+                last_tick = Instant::now();
+                tail_elapsed_ms += dt_ms;
+
+                if tail_elapsed_ms >= tail_scroll_ms {
+                    log::debug!("TailEmit finished: {:.0}ms elapsed", tail_elapsed_ms);
+                    state = EngineState::Idle;
+                    continue;
+                }
+
+                emit_scroll(&mut vdev, axis, tail_sign);
+                log::debug!(
+                    "TailEmit emit: hires={} elapsed={:.0}ms dt={:.2}ms",
+                    tail_sign,
+                    tail_elapsed_ms,
+                    dt_ms
+                );
             }
 
             EngineState::PointerMomentum => {
@@ -312,6 +404,27 @@ pub fn run_engine(
                 emit_pointer(&mut vdev, dx, dy);
             }
         }
+    }
+}
+
+fn enter_tail_or_idle(
+    state: &mut EngineState,
+    velocity: &mut f64,
+    tail_sign: &mut i32,
+    tail_elapsed_ms: &mut f64,
+    last_tick: &mut Instant,
+    tail_scroll_ms: f64,
+) {
+    let sign = if *velocity > 0.0 { 1 } else { -1 };
+    *velocity = 0.0;
+    if tail_scroll_ms > 0.0 {
+        *tail_sign = sign;
+        *tail_elapsed_ms = 0.0;
+        *state = EngineState::ScrollTailEmit;
+        *last_tick = Instant::now();
+        log::debug!("-> TailEmit: {}ms, sign={}", tail_scroll_ms, *tail_sign);
+    } else {
+        *state = EngineState::Idle;
     }
 }
 

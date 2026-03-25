@@ -27,6 +27,7 @@ pub struct ScrollConfig {
     pub linear_stop_hires: Option<i32>,
     pub time_constant_ms: Option<f64>,
     pub stop_threshold: Option<f64>,
+    pub tail_scroll_ms: Option<u64>,
     pub min_velocity: Option<f64>,
     pub scroll_factor: Option<f64>,
     pub tp_to_hires: Option<f64>,
@@ -54,6 +55,7 @@ pub const DEFAULT_LINEAR_DECEL_MS: i32 = 384;
 pub const DEFAULT_LINEAR_STOP_HIRES: i32 = 1;
 pub const DEFAULT_TIME_CONSTANT_MS: f64 = 325.0;
 pub const DEFAULT_STOP_THRESHOLD: f64 = 60.0;
+pub const DEFAULT_TAIL_SCROLL_MS: u64 = 0;
 pub const DEFAULT_MIN_SCROLL_VELOCITY: f64 = 120.0;
 pub const DEFAULT_SCROLL_FACTOR: f64 = 1.0;
 pub const DEFAULT_TP_TO_HIRES: f64 = 5.0;
@@ -99,11 +101,7 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
         damping: cli
             .damping
             .unwrap_or_else(|| scroll.and_then(|s| s.damping).unwrap_or(DEFAULT_DAMPING)),
-        damping_curve: cli.damping_curve.clone().unwrap_or_else(|| {
-            scroll
-                .and_then(|s| s.damping_curve.clone())
-                .unwrap_or_else(|| DEFAULT_DAMPING_CURVE.into())
-        }),
+        damping_curve: resolve_damping_curve(cli, scroll),
         phase_threshold: cli.phase_threshold.unwrap_or_else(|| {
             scroll
                 .and_then(|s| s.phase_threshold)
@@ -128,6 +126,11 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
             scroll
                 .and_then(|s| s.stop_threshold)
                 .unwrap_or(DEFAULT_STOP_THRESHOLD)
+        }),
+        tail_scroll_ms: cli.tail_scroll_ms.unwrap_or_else(|| {
+            scroll
+                .and_then(|s| s.tail_scroll_ms)
+                .unwrap_or(DEFAULT_TAIL_SCROLL_MS)
         }),
         min_scroll_velocity: cli.min_scroll_velocity.unwrap_or_else(|| {
             scroll
@@ -170,6 +173,13 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
                 .unwrap_or_else(|| DEFAULT_LOG_LEVEL.into())
         }),
     }
+}
+
+fn resolve_damping_curve(cli: &crate::Args, scroll: Option<&ScrollConfig>) -> String {
+    cli.damping_curve
+        .clone()
+        .or_else(|| scroll.and_then(|s| s.damping_curve.clone()))
+        .unwrap_or_else(|| DEFAULT_DAMPING_CURVE.into())
 }
 
 pub fn warn_unused_curve_params(cli: &crate::Args, resolved: &crate::ResolvedArgs) {

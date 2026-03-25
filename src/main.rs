@@ -62,6 +62,10 @@ pub struct Args {
     #[arg(long)]
     pub stop_threshold: Option<f64>,
 
+    /// Tail scroll: emit minimum hires for this many ms after deceleration ends (0 = off)
+    #[arg(long)]
+    pub tail_scroll_ms: Option<u64>,
+
     /// Minimum velocity to trigger scroll momentum
     #[arg(long)]
     pub min_scroll_velocity: Option<f64>,
@@ -115,6 +119,7 @@ pub struct ResolvedArgs {
     pub linear_stop_hires: i32,
     pub time_constant_ms: f64,
     pub stop_threshold: f64,
+    pub tail_scroll_ms: u64,
     pub min_scroll_velocity: f64,
     pub scroll_factor: f64,
     pub tp_to_hires: f64,
