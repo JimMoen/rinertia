@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::PathBuf;
 
 /// Find a touchpad device, either by explicit path, name filter, or auto-detection.

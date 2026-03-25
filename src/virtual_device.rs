@@ -1,7 +1,7 @@
 use anyhow::Result;
 use evdev::{
-    uinput::VirtualDeviceBuilder, AttributeSet, BusType, EventType, InputEvent, InputId, Key,
-    RelativeAxisType, Synchronization,
+    AttributeSet, BusType, EventType, InputEvent, InputId, Key, RelativeAxisType, Synchronization,
+    uinput::VirtualDeviceBuilder,
 };
 
 pub struct VirtualDevice {
