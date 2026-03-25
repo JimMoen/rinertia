@@ -19,7 +19,7 @@ damping_curve = "dual"
 damping = 0.05
 
 # --- dual only ---
-phase_threshold = 360.0
+phase_threshold = 25.0
 linear_decel_ms = 384
 linear_stop_hires = 1
 

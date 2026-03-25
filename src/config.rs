@@ -51,7 +51,7 @@ pub struct InterruptConfig {
 pub const DEFAULT_MODE: &str = "scroll";
 pub const DEFAULT_DAMPING: f64 = 0.05;
 pub const DEFAULT_DAMPING_CURVE: &str = "dual";
-pub const DEFAULT_PHASE_THRESHOLD: f64 = 360.0;
+pub const DEFAULT_PHASE_THRESHOLD: f64 = 25.0;
 pub const DEFAULT_LINEAR_DECEL_MS: i32 = 384;
 pub const DEFAULT_LINEAR_STOP_HIRES: i32 = 1;
 pub const DEFAULT_TIME_CONSTANT_MS: f64 = 325.0;
