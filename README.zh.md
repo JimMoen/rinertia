@@ -4,6 +4,19 @@ Linux 触摸板的 macOS 风格惯性滚动。
 
 两指滚动后抬起手指，页面继续滑行 — 就像 Mac 一样。全系统生效，兼容任何 Wayland 合成器、任何应用，开箱即用。
 
+## 工作原理
+
+```
+内核 evdev ──► rinertia（被动读取）──► 动量引擎 ──► uinput 虚拟设备
+                  │                                        │
+                  │  不依赖 libinput，不 GRAB 设备          │
+                  ▼                                        ▼
+           触摸板事件照常流向                         注入 REL_WHEEL_HI_RES
+           libinput / 合成器                         到输入栈
+```
+
+rinertia 通过 evdev 直接从 `/dev/input/eventN` 读取原始触摸板事件，**不依赖也不干扰 libinput**。由于从不抢占设备，你的合成器、libinput 以及手势工具（如 [fusuma](https://github.com/iberianpig/fusuma)）完全不受影响。
+
 ## 特性
 
 - **即插即用** — 自动检测触摸板，直接运行
@@ -57,6 +70,12 @@ rinertia --help
 - **Chromium 系浏览器**自带 smooth scrolling，可能与 rinertia 叠加。可通过 `chrome://flags/#smooth-scrolling` 关闭，或用 `--scroll-factor` 补偿。
 - `--tp-to-hires` 因设备而异 — 如果滚动过快或过慢，优先调这个参数。
 - 指针惯性（`--mode pointer`）为实验性功能。
+
+## 致谢
+
+- [fusuma](https://github.com/iberianpig/fusuma) — 多点触控手势识别器，其架构启发了本项目的被动 evdev 监听设计
+- [waynaptics](https://github.com/kekekeks/waynaptics) — Wayland synaptics 驱动适配层，本项目的双阶段动量引擎最初移植自该项目
+- [xkeysnail](https://github.com/mooz/xkeysnail) — 基于 evdev 的按键重映射工具，其被动 evdev 监听方式为本项目的无 GRAB 设计提供了参考
 
 ## 许可
 

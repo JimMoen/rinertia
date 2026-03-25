@@ -4,6 +4,20 @@ macOS-like inertial scrolling for Linux touchpads.
 
 Lift your fingers after a two-finger scroll and the page keeps gliding — just like on a Mac. Works system-wide with any Wayland compositor, any application, zero configuration required.
 
+## How it works
+
+```
+Kernel evdev ──► rinertia (passive read) ──► momentum engine ──► uinput virtual device
+                     │                                                    │
+                     │  (no GRAB, no libinput dependency)                 │
+                     ▼                                                    ▼
+              Touchpad events                                  REL_WHEEL_HI_RES
+              still flow normally                              injected into
+              to libinput / compositor                         the input stack
+```
+
+rinertia reads raw touchpad events directly from `/dev/input/eventN` via evdev — it does **not** depend on or interfere with libinput. Since it never grabs the device, your compositor, libinput, and gesture tools like [fusuma](https://github.com/iberianpig/fusuma) continue to work exactly as before.
+
 ## Features
 
 - **Plug and play** — auto-detects your touchpad, just run it
@@ -34,7 +48,7 @@ sudo rinertia --damping 0.03 --linear-decel-ms 500
 sudo rinertia --damping 0.10 --linear-decel-ms 200
 
 # Pure exponential decay (no linear tail)
-sudo rinertia --decay-mode expo
+sudo rinertia --damping-curve expo
 
 # Troubleshooting — log only, no virtual device
 sudo rinertia --dry --log-level debug
@@ -57,6 +71,12 @@ rinertia --help
 - **Chromium-based browsers** have built-in smooth scrolling that may stack with rinertia. Disable it via `chrome://flags/#smooth-scrolling`, or use `--scroll-factor` to compensate.
 - `--tp-to-hires` is device-specific — if scrolling feels too fast or slow, adjust this first.
 - Pointer inertia (`--mode pointer`) is experimental.
+
+## Acknowledgements
+
+- [fusuma](https://github.com/iberianpig/fusuma) — multitouch gesture recognizer, whose architecture inspired our passive evdev listener design
+- [waynaptics](https://github.com/kekekeks/waynaptics) — Wayland synaptics driver shim, from which the dual-phase momentum engine was originally ported
+- [xkeysnail](https://github.com/mooz/xkeysnail) — evdev-based key remapper, whose passive evdev monitoring approach informed our no-GRAB design
 
 ## License
 
