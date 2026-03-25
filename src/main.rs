@@ -78,6 +78,10 @@ pub struct Args {
     #[arg(long)]
     pub tp_to_hires: Option<f64>,
 
+    /// Max age (ms) of velocity samples; older samples are discarded (default: 150)
+    #[arg(long)]
+    pub velocity_stale_ms: Option<u64>,
+
     /// Drag coefficient for pointer inertia (0.0 ~ 1.0)
     #[arg(long)]
     pub pointer_drag: Option<f64>,
@@ -123,6 +127,7 @@ pub struct ResolvedArgs {
     pub min_scroll_velocity: f64,
     pub scroll_factor: f64,
     pub tp_to_hires: f64,
+    pub velocity_stale_ms: u64,
     pub pointer_drag: f64,
     pub pointer_speed_factor: f64,
     pub pointer_min_velocity: f64,

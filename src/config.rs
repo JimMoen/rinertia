@@ -31,6 +31,7 @@ pub struct ScrollConfig {
     pub min_velocity: Option<f64>,
     pub scroll_factor: Option<f64>,
     pub tp_to_hires: Option<f64>,
+    pub velocity_stale_ms: Option<u64>,
     pub multitouch_cooldown: Option<u64>,
 }
 
@@ -59,6 +60,7 @@ pub const DEFAULT_TAIL_SCROLL_MS: u64 = 0;
 pub const DEFAULT_MIN_SCROLL_VELOCITY: f64 = 120.0;
 pub const DEFAULT_SCROLL_FACTOR: f64 = 1.0;
 pub const DEFAULT_TP_TO_HIRES: f64 = 5.0;
+pub const DEFAULT_VELOCITY_STALE_MS: u64 = 150;
 pub const DEFAULT_POINTER_DRAG: f64 = 0.15;
 pub const DEFAULT_POINTER_SPEED_FACTOR: f64 = 0.0075;
 pub const DEFAULT_POINTER_MIN_VELOCITY: f64 = 2000.0;
@@ -146,6 +148,11 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
             scroll
                 .and_then(|s| s.tp_to_hires)
                 .unwrap_or(DEFAULT_TP_TO_HIRES)
+        }),
+        velocity_stale_ms: cli.velocity_stale_ms.unwrap_or_else(|| {
+            scroll
+                .and_then(|s| s.velocity_stale_ms)
+                .unwrap_or(DEFAULT_VELOCITY_STALE_MS)
         }),
         pointer_drag: cli
             .pointer_drag

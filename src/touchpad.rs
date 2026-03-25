@@ -42,9 +42,19 @@ impl RingBuffer {
         self.pos = 0;
     }
 
-    fn compute_velocity(&self, tp_to_hires: f64) -> f64 {
+    fn compute_velocity(&self, tp_to_hires: f64, now_us: u64, stale_us: u64) -> f64 {
         let n = self.count.min(VELOCITY_SAMPLES);
         if n < 2 {
+            return 0.0;
+        }
+
+        let newest_idx = if self.pos == 0 {
+            RING_SIZE - 1
+        } else {
+            self.pos - 1
+        };
+        let newest_ts = self.buf[newest_idx].1;
+        if now_us.saturating_sub(newest_ts) > stale_us {
             return 0.0;
         }
 
@@ -215,8 +225,18 @@ pub fn run_listener(
                             log::debug!("State -> TwoFingerScroll");
                         } else {
                             if state == ListenerState::TwoFingerScroll && enable_scroll {
-                                let vel_y = scroll_ring_y.compute_velocity(args.tp_to_hires);
-                                let vel_x = scroll_ring_x.compute_velocity(args.tp_to_hires);
+                                let now_us = timestamp_to_us(current_ts);
+                                let stale_us = args.velocity_stale_ms * 1000;
+                                let vel_y = scroll_ring_y.compute_velocity(
+                                    args.tp_to_hires,
+                                    now_us,
+                                    stale_us,
+                                );
+                                let vel_x = scroll_ring_x.compute_velocity(
+                                    args.tp_to_hires,
+                                    now_us,
+                                    stale_us,
+                                );
                                 let abs_vy = vel_y.abs();
                                 let abs_vx = vel_x.abs();
 
