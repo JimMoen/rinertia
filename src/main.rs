@@ -168,7 +168,12 @@ fn main() -> Result<()> {
     let cfg = match &cli.config {
         Some(path) => {
             let p = std::path::Path::new(path);
-            config::load(p)?
+            if p.exists() {
+                config::load(p)?
+            } else {
+                log::debug!("Config file not found: {}, using defaults", path);
+                config::Config::default()
+            }
         }
         None => config::Config::default(),
     };
