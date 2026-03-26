@@ -6,15 +6,20 @@ The Synaptics input driver used to provide momentum (coasting) scrolling — you
 
 ## How it works
 
+```mermaid
+graph LR
+    K["Kernel evdev<br/>/dev/input/eventN"] --> R["rinertia<br/>(passive read, no GRAB)"]
+    K --> L["libinput"]
+    R --> M["Momentum engine"]
+    M --> U["uinput virtual device<br/>REL_WHEEL_HI_RES"]
+    U --> L
+    L --> C["Compositor / Applications"]
+
+    style R fill:#4a9eff,color:#fff
+    style U fill:#4a9eff,color:#fff
 ```
-Kernel evdev ──► rinertia (passive read) ──► momentum engine ──► uinput virtual device
-                     │                                                    │
-                     │  (no GRAB, no libinput dependency)                 │
-                     ▼                                                    ▼
-              Touchpad events                                  REL_WHEEL_HI_RES
-              still flow normally                              injected into
-              to libinput / compositor                         the input stack
-```
+
+> rinertia passively reads touchpad events via evdev, computes momentum, and injects scroll events through a uinput virtual device. These injected events flow through libinput into the compositor — the same path as any real input device. Since rinertia never grabs the touchpad, normal scrolling, gestures, and tools like [fusuma](https://github.com/iberianpig/fusuma) are completely unaffected.
 
 rinertia reads raw touchpad events directly from `/dev/input/eventN` via evdev — it does **not** depend on or interfere with libinput. Since it never grabs the device, your compositor, libinput, and gesture tools like [fusuma](https://github.com/iberianpig/fusuma) continue to work exactly as before.
 
