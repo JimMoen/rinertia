@@ -165,18 +165,16 @@ pub enum ScrollAxis {
 fn main() -> Result<()> {
     let cli = Args::parse();
 
-    let cfg = match &cli.config {
+    let (cfg, config_missing) = match &cli.config {
         Some(path) => {
             let p = std::path::Path::new(path);
             if p.exists() {
-                config::load(p)?
+                (config::load(p)?, false)
             } else {
-                log::error!("Config file not found: {}", path);
-                log::warn!("Falling back to built-in defaults");
-                config::Config::default()
+                (config::Config::default(), true)
             }
         }
-        None => config::Config::default(),
+        None => (config::Config::default(), false),
     };
 
     let mut args = config::resolve(&cli, &cfg);
@@ -189,7 +187,12 @@ fn main() -> Result<()> {
         .parse_default_env()
         .init();
 
-    if cli.config.is_some() {
+    if config_missing {
+        log::error!("Config file not found: {}", cli.config.as_deref().unwrap());
+        log::warn!("Falling back to built-in defaults");
+    }
+
+    if cli.config.is_some() && !config_missing {
         log::info!("Loaded config: {}", cli.config.as_deref().unwrap());
     }
     config::warn_unused_curve_params(&cli, &args);
