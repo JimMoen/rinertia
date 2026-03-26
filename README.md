@@ -1,8 +1,8 @@
 # rinertia
 
-macOS-like inertial scrolling for Linux touchpads.
+Momentum scrolling for Linux laptop touchpads.
 
-Lift your fingers after a two-finger scroll and the page keeps gliding — just like on a Mac. Works system-wide with any Wayland compositor, any application, zero configuration required.
+The Synaptics input driver used to provide momentum (coasting) scrolling — you could flick two fingers and the page would keep gliding. When the Linux desktop moved to libinput, this feature was dropped. rinertia brings it back as a standalone userspace daemon, working system-wide with any Wayland compositor and any application, zero configuration required.
 
 ## How it works
 

@@ -1,8 +1,8 @@
 # rinertia
 
-Linux 触摸板的 macOS 风格惯性滚动。
+Linux 笔记本触摸板的动量滚动。
 
-两指滚动后抬起手指，页面继续滑行 — 就像 Mac 一样。全系统生效，兼容任何 Wayland 合成器、任何应用，开箱即用。
+Synaptics 触摸板驱动曾提供动量（惯性）滚动功能——两指快速滑动后页面会继续滑行。当 Linux 桌面迁移到 libinput 后，这一功能被移除了。rinertia 以独立的用户空间守护进程形式将其带回，全系统生效，兼容任何 Wayland 合成器、任何应用，开箱即用。
 
 ## 工作原理
 
@@ -47,7 +47,7 @@ sudo rinertia --damping 0.03 --linear-decel-ms 500
 sudo rinertia --damping 0.10 --linear-decel-ms 200
 
 # 纯指数衰减（无线性尾段）
-sudo rinertia --decay-mode expo
+sudo rinertia --damping-curve expo
 
 # 排查问题 — 仅打印日志，不创建虚拟设备
 sudo rinertia --dry --log-level debug
