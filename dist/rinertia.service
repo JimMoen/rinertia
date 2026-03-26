@@ -5,15 +5,9 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/rinertia
+ExecStart=/usr/bin/rinertia --config %h/.config/rinertia/config.toml
 Restart=on-failure
 RestartSec=3
-
-# To use a config file, override ExecStart:
-#   systemctl --user edit rinertia.service
-#   [Service]
-#   ExecStart=
-#   ExecStart=/usr/bin/rinertia --config %h/.config/rinertia/config.toml
 
 [Install]
 WantedBy=graphical-session.target

@@ -171,7 +171,8 @@ fn main() -> Result<()> {
             if p.exists() {
                 config::load(p)?
             } else {
-                log::debug!("Config file not found: {}, using defaults", path);
+                log::error!("Config file not found: {}", path);
+                log::warn!("Falling back to built-in defaults");
                 config::Config::default()
             }
         }
