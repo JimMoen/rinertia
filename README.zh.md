@@ -65,6 +65,21 @@ rinertia --help
 | `--linear-decel-ms` | 尾段更慢、更长 |
 | `--scroll-factor` | 每帧输出更多 |
 
+## 滚动方向
+
+rinertia 启动时会**自动检测**桌面环境的滚动方向设置。目前支持：
+
+| 桌面环境 | 检测方式 |
+|---------|---------|
+| KDE Plasma | KWin D-Bus (`org.kde.KWin.InputDevice.naturalScroll`) |
+| GNOME | gsettings (`org.gnome.desktop.peripherals.touchpad natural-scroll`) |
+| 其他 | libinput 设备默认值（会打印警告） |
+
+- **传统滚动**（默认）— 手指拖动滚动条。向下滑动 → 页面向下滚动。
+- **自然滚动** — 手指和页面内容相对静止，像"抓"着页面拖动。向下滑动 → 页面向上滚动。
+
+可通过 `--natural-scroll` 或配置文件中的 `natural_scroll = true` 手动覆盖自动检测值。如果手动设置与桌面环境设置冲突，rinertia 会打印警告。
+
 ## 已知问题
 
 - **Chromium 系浏览器**自带 smooth scrolling，可能与 rinertia 叠加。可通过 `chrome://flags/#smooth-scrolling` 关闭，或用 `--scroll-factor` 补偿。

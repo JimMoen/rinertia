@@ -240,14 +240,15 @@ pub fn run_listener(
                                 let abs_vy = vel_y.abs();
                                 let abs_vx = vel_x.abs();
 
-                                // ABS_Y increases downward, but REL_WHEEL_HI_RES positive
-                                // means scroll up. Negate Y to match natural scroll direction.
-                                // X axis: ABS_X increases rightward, REL_HWHEEL_HI_RES
-                                // positive means scroll right — same direction, no negate.
+                                // ABS_Y increases downward, REL_WHEEL_HI_RES positive = scroll up.
+                                // Traditional (default): negate Y so finger-down = page-down.
+                                // Natural scroll: don't negate, finger-down = page-up (content follows finger).
+                                let y_sign: f64 = if args.natural_scroll { 1.0 } else { -1.0 };
+                                let x_sign: f64 = if args.natural_scroll { -1.0 } else { 1.0 };
                                 let (velocity, axis) = if abs_vy >= abs_vx {
-                                    (-vel_y * args.scroll_factor, ScrollAxis::Vertical)
+                                    (y_sign * vel_y * args.scroll_factor, ScrollAxis::Vertical)
                                 } else {
-                                    (vel_x * args.scroll_factor, ScrollAxis::Horizontal)
+                                    (x_sign * vel_x * args.scroll_factor, ScrollAxis::Horizontal)
                                 };
 
                                 if velocity.abs() >= args.min_scroll_velocity {

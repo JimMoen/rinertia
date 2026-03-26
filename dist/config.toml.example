@@ -30,6 +30,7 @@ linear_stop_hires = 1
 min_velocity = 120.0
 scroll_factor = 1.0
 tp_to_hires = 5.0
+# natural_scroll = false
 multitouch_cooldown = 500
 
 [pointer]

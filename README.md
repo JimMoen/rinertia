@@ -66,6 +66,21 @@ rinertia --help
 | `--linear-decel-ms` | Slower, longer tail |
 | `--scroll-factor` | More scroll output per tick |
 
+## Scroll direction
+
+rinertia **auto-detects** your desktop's scroll direction setting at startup. Currently supported:
+
+| Desktop | Detection method |
+|---------|-----------------|
+| KDE Plasma | KWin D-Bus (`org.kde.KWin.InputDevice.naturalScroll`) |
+| GNOME | gsettings (`org.gnome.desktop.peripherals.touchpad natural-scroll`) |
+| Others | libinput device default (with warning) |
+
+- **Traditional scrolling** (default) — finger drags the scrollbar. Swipe down → page scrolls down.
+- **Natural scrolling** — finger moves with the content, like dragging a piece of paper. Swipe down → page scrolls up.
+
+You can override the auto-detected value with `--natural-scroll` or `natural_scroll = true` in the config file. If your override conflicts with the desktop setting, rinertia will print a warning.
+
 ## Known issues
 
 - **Chromium-based browsers** have built-in smooth scrolling that may stack with rinertia. Disable it via `chrome://flags/#smooth-scrolling`, or use `--scroll-factor` to compensate.

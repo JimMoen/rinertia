@@ -8,6 +8,7 @@ mod config;
 mod device_discovery;
 mod interrupt;
 mod momentum;
+mod natural_scroll;
 mod touchpad;
 mod virtual_device;
 
@@ -102,6 +103,10 @@ pub struct Args {
     #[arg(long)]
     pub no_interrupt: bool,
 
+    /// Enable natural scrolling direction (finger moves with content, not scrollbar)
+    #[arg(long)]
+    pub natural_scroll: bool,
+
     /// Dry mode: don't create virtual device, only log
     #[arg(long)]
     pub dry: bool,
@@ -132,6 +137,7 @@ pub struct ResolvedArgs {
     pub pointer_speed_factor: f64,
     pub pointer_min_velocity: f64,
     pub multitouch_cooldown: u64,
+    pub natural_scroll: bool,
     pub no_interrupt: bool,
     pub dry: bool,
     pub log_level: String,
@@ -167,7 +173,7 @@ fn main() -> Result<()> {
         None => config::Config::default(),
     };
 
-    let args = config::resolve(&cli, &cfg);
+    let mut args = config::resolve(&cli, &cfg);
 
     env_logger::Builder::new()
         .filter_module(
@@ -185,6 +191,28 @@ fn main() -> Result<()> {
     let touchpad_path =
         device_discovery::find_touchpad(args.device.as_deref(), args.device_name.as_deref())?;
     log::info!("Using touchpad: {}", touchpad_path.display());
+
+    let sysname = touchpad_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("event0");
+
+    let user_explicit =
+        cli.natural_scroll || cfg.scroll.as_ref().and_then(|s| s.natural_scroll).is_some();
+
+    if let Some(detected) = natural_scroll::detect(sysname) {
+        if user_explicit && args.natural_scroll != detected {
+            log::warn!(
+                "natural_scroll={} (from CLI/config) differs from desktop setting ({}). \
+                 Momentum direction may not match normal scrolling.",
+                args.natural_scroll,
+                detected
+            );
+        }
+        if !user_explicit {
+            args.natural_scroll = detected;
+        }
+    }
 
     let vdev = if args.dry {
         log::info!("Dry mode: no virtual device created");

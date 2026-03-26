@@ -32,6 +32,7 @@ pub struct ScrollConfig {
     pub scroll_factor: Option<f64>,
     pub tp_to_hires: Option<f64>,
     pub velocity_stale_ms: Option<u64>,
+    pub natural_scroll: Option<bool>,
     pub multitouch_cooldown: Option<u64>,
 }
 
@@ -61,6 +62,7 @@ pub const DEFAULT_MIN_SCROLL_VELOCITY: f64 = 120.0;
 pub const DEFAULT_SCROLL_FACTOR: f64 = 1.0;
 pub const DEFAULT_TP_TO_HIRES: f64 = 5.0;
 pub const DEFAULT_VELOCITY_STALE_MS: u64 = 150;
+pub const DEFAULT_NATURAL_SCROLL: bool = false;
 pub const DEFAULT_POINTER_DRAG: f64 = 0.15;
 pub const DEFAULT_POINTER_SPEED_FACTOR: f64 = 0.0075;
 pub const DEFAULT_POINTER_MIN_VELOCITY: f64 = 2000.0;
@@ -172,6 +174,13 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
                 .and_then(|s| s.multitouch_cooldown)
                 .unwrap_or(DEFAULT_MULTITOUCH_COOLDOWN)
         }),
+        natural_scroll: if cli.natural_scroll {
+            true
+        } else {
+            scroll
+                .and_then(|s| s.natural_scroll)
+                .unwrap_or(DEFAULT_NATURAL_SCROLL)
+        },
         no_interrupt: cli.no_interrupt || interrupt.and_then(|i| i.enabled).map_or(false, |e| !e),
         dry: cli.dry,
         log_level: cli.log_level.clone().unwrap_or_else(|| {
