@@ -190,6 +190,14 @@ fn main() -> Result<()> {
         log::info!("Dry mode: no virtual device created");
         None
     } else {
+        let uinput_path = std::path::Path::new("/dev/uinput");
+        if let Err(e) = std::fs::OpenOptions::new().write(true).open(uinput_path) {
+            log::error!(
+                "/dev/uinput: {}. Add your user to the 'uinput' group, or run as root. See dist/99-rinertia.rules.",
+                e
+            );
+            std::process::exit(1);
+        }
         let enable_scroll = args.mode == "scroll" || args.mode == "both";
         let enable_pointer = args.mode == "pointer" || args.mode == "both";
         Some(virtual_device::VirtualDevice::new(
