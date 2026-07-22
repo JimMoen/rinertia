@@ -5,6 +5,7 @@ use std::thread;
 
 mod config;
 mod device_discovery;
+mod focused_app;
 mod interrupt;
 mod momentum;
 mod natural_scroll;
@@ -110,6 +111,10 @@ pub struct Args {
     #[arg(long)]
     pub no_natural_scroll: bool,
 
+    /// Disable momentum when the focused window's app class contains this string (repeatable)
+    #[arg(long = "exclude-app")]
+    pub exclude_app: Vec<String>,
+
     /// Dry mode: don't create virtual device, only log
     #[arg(long)]
     pub dry: bool,
@@ -141,6 +146,7 @@ pub struct ResolvedArgs {
     pub pointer_min_velocity: f64,
     pub multitouch_cooldown: u64,
     pub natural_scroll: bool,
+    pub exclude_apps: Vec<String>,
     pub no_interrupt: bool,
     pub dry: bool,
     pub log_level: String,
@@ -199,6 +205,20 @@ fn main() -> Result<()> {
         log::info!("Loaded config: {}", cli.config.as_deref().unwrap());
     }
     config::warn_unused_curve_params(&cli, &cfg, &args);
+
+    if !args.exclude_apps.is_empty() {
+        match focused_app::detect() {
+            Some(class) => log::info!(
+                "exclude_apps {:?} active; focused app detected as '{}'",
+                args.exclude_apps,
+                class
+            ),
+            None => log::warn!(
+                "exclude_apps is set but focused-app detection is unavailable on this session; \
+                 momentum will not be suppressed"
+            ),
+        }
+    }
 
     let touchpad_path =
         device_discovery::find_touchpad(args.device.as_deref(), args.device_name.as_deref())?;

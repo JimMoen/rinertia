@@ -2,7 +2,7 @@ use evdev::{AbsoluteAxisType, InputEventKind, Key};
 use std::sync::mpsc;
 use std::time;
 
-use crate::{MomentumMessage, ResolvedArgs, ScrollAxis};
+use crate::{MomentumMessage, ResolvedArgs, ScrollAxis, focused_app};
 
 const RING_SIZE: usize = 8;
 const VELOCITY_SAMPLES: usize = 4;
@@ -123,6 +123,7 @@ pub fn run_listener(
     // Suppresses the Stop from BTN_TOOL_FINGER=1 that arrives in the same
     // SYN_REPORT frame as a BTN_TOOL_DOUBLETAP=0 which just launched momentum.
     let mut momentum_just_started;
+    let mut focused_app_cache: Option<(Option<String>, time::Instant)> = None;
 
     while let Ok(events) = device.fetch_events() {
         momentum_just_started = false;
@@ -229,6 +230,10 @@ pub fn run_listener(
                             scroll_ring_x.clear();
                             scroll_prev_y = None;
                             scroll_prev_x = None;
+                            if !args.exclude_apps.is_empty() {
+                                focused_app_cache =
+                                    Some((focused_app::detect(), time::Instant::now()));
+                            }
                             log::debug!("State -> TwoFingerScroll");
                         } else {
                             if state == ListenerState::TwoFingerScroll && enable_scroll {
@@ -259,16 +264,31 @@ pub fn run_listener(
                                 };
 
                                 if velocity.abs() >= args.min_scroll_velocity {
-                                    log::debug!(
-                                        "Scroll momentum: vel={:.1} axis={:?}",
-                                        velocity,
-                                        axis
+                                    let excluded = matches!(
+                                        &focused_app_cache,
+                                        Some((Some(class), ts))
+                                            if ts.elapsed() < time::Duration::from_secs(2)
+                                                && focused_app::is_excluded(
+                                                    class,
+                                                    &args.exclude_apps
+                                                )
                                     );
-                                    let _ = tx.send(MomentumMessage::StartScroll {
-                                        velocity_hires_per_sec: velocity,
-                                        axis,
-                                    });
-                                    momentum_just_started = true;
+                                    if excluded {
+                                        log::debug!(
+                                            "Scroll momentum suppressed: focused app matches exclude_apps"
+                                        );
+                                    } else {
+                                        log::debug!(
+                                            "Scroll momentum: vel={:.1} axis={:?}",
+                                            velocity,
+                                            axis
+                                        );
+                                        let _ = tx.send(MomentumMessage::StartScroll {
+                                            velocity_hires_per_sec: velocity,
+                                            axis,
+                                        });
+                                        momentum_just_started = true;
+                                    }
                                 } else {
                                     log::debug!(
                                         "Scroll too slow: vel_y={:.1} vel_x={:.1} (threshold={})",

@@ -34,6 +34,7 @@ pub struct ScrollConfig {
     pub velocity_stale_ms: Option<u64>,
     pub natural_scroll: Option<bool>,
     pub multitouch_cooldown: Option<u64>,
+    pub exclude_apps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -182,6 +183,13 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
             scroll
                 .and_then(|s| s.natural_scroll)
                 .unwrap_or(DEFAULT_NATURAL_SCROLL)
+        },
+        exclude_apps: {
+            let mut apps: Vec<String> = scroll
+                .and_then(|s| s.exclude_apps.clone())
+                .unwrap_or_default();
+            apps.extend(cli.exclude_app.iter().cloned());
+            apps
         },
         no_interrupt: cli.no_interrupt || interrupt.and_then(|i| i.enabled).is_some_and(|e| !e),
         dry: cli.dry,

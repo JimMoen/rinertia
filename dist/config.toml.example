@@ -33,6 +33,11 @@ tp_to_hires = 5.0
 # natural_scroll = false
 multitouch_cooldown = 500
 
+# Disable rinertia momentum while the focused window's app class contains
+# one of these strings (case-insensitive substring match). Useful for apps
+# with their own built-in momentum scrolling (e.g. Telegram Desktop).
+# exclude_apps = ["telegram"]
+
 [pointer]
 enabled = false
 drag = 0.15

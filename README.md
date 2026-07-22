@@ -89,6 +89,9 @@ You can override the auto-detected value with `--natural-scroll` or `natural_scr
 ## Known issues
 
 - **Chromium-based browsers** have built-in smooth scrolling that may stack with rinertia. Disable it via `chrome://flags/#smooth-scrolling`, or use `--scroll-factor` to compensate.
+- **Telegram Desktop** enables its own QScroller kinetic scrolling on Linux. Physical two-finger flicks arrive as `axis_source=FINGER` (touchpad) events with scroll phases, so Telegram starts its own momentum on finger-lift while rinertia emits its `WHEEL`-source momentum on top — the two decay curves stack and jitter. Remedies:
+  - Exclude Telegram from rinertia momentum: `exclude_apps = ["telegram"]` in the config file, or `--exclude-app telegram`. rinertia then detects the focused app (KWin script bridge on KDE Plasma, `xprop` on X11) and suppresses only its own momentum — Telegram's native momentum keeps working.
+  - Alternatively disable Telegram's kinetic scrolling via its experimental `qscroller` option and let rinertia drive all momentum.
 - `--tp-to-hires` is device-specific — if scrolling feels too fast or slow, adjust this first.
 - Pointer inertia (`--mode pointer`) is experimental.
 
