@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
-nix = { version = "0.29", features = ["ioctl"] }
+nix = { version = "0.29", features = ["ioctl", "poll"] }
 
 [profile.release]
 opt-level = "s"

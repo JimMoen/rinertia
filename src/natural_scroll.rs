@@ -5,18 +5,18 @@ pub fn detect(touchpad_sysname: &str) -> Option<bool> {
         .unwrap_or_default()
         .to_lowercase();
 
-    if desktop.contains("kde") || desktop.contains("plasma") {
-        if let Some(val) = detect_kde(touchpad_sysname) {
-            log::info!("Detected natural_scroll={} from KDE/KWin D-Bus", val);
-            return Some(val);
-        }
+    if (desktop.contains("kde") || desktop.contains("plasma"))
+        && let Some(val) = detect_kde(touchpad_sysname)
+    {
+        log::info!("Detected natural_scroll={} from KDE/KWin D-Bus", val);
+        return Some(val);
     }
 
-    if desktop.contains("gnome") {
-        if let Some(val) = detect_gnome() {
-            log::info!("Detected natural_scroll={} from GNOME gsettings", val);
-            return Some(val);
-        }
+    if desktop.contains("gnome")
+        && let Some(val) = detect_gnome()
+    {
+        log::info!("Detected natural_scroll={} from GNOME gsettings", val);
+        return Some(val);
     }
 
     // TODO: Sway — swaymsg -t get_inputs (JSON, find touchpad natural_scroll)

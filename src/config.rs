@@ -176,12 +176,14 @@ pub fn resolve(cli: &crate::Args, cfg: &Config) -> crate::ResolvedArgs {
         }),
         natural_scroll: if cli.natural_scroll {
             true
+        } else if cli.no_natural_scroll {
+            false
         } else {
             scroll
                 .and_then(|s| s.natural_scroll)
                 .unwrap_or(DEFAULT_NATURAL_SCROLL)
         },
-        no_interrupt: cli.no_interrupt || interrupt.and_then(|i| i.enabled).map_or(false, |e| !e),
+        no_interrupt: cli.no_interrupt || interrupt.and_then(|i| i.enabled).is_some_and(|e| !e),
         dry: cli.dry,
         log_level: cli.log_level.clone().unwrap_or_else(|| {
             cfg.log_level
@@ -198,50 +200,166 @@ fn resolve_damping_curve(cli: &crate::Args, scroll: Option<&ScrollConfig>) -> St
         .unwrap_or_else(|| DEFAULT_DAMPING_CURVE.into())
 }
 
-pub fn warn_unused_curve_params(cli: &crate::Args, resolved: &crate::ResolvedArgs) {
-    let curve = resolved.damping_curve.as_str();
-    match curve {
-        "expo" => {
-            let unused: Vec<&str> = [
-                cli.phase_threshold.map(|_| "--phase-threshold"),
-                cli.linear_decel_ms.map(|_| "--linear-decel-ms"),
-                cli.linear_stop_hires.map(|_| "--linear-stop-hires"),
-                cli.time_constant_ms.map(|_| "--time-constant-ms"),
-                cli.stop_threshold.map(|_| "--stop-threshold"),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            for p in &unused {
-                log::warn!("{} has no effect with damping_curve=\"expo\"", p);
-            }
+fn is_set<T>(cli_val: Option<T>, cfg_val: Option<T>) -> bool {
+    cli_val.is_some() || cfg_val.is_some()
+}
+
+fn warn_unused(curve: &str, params: &[(&str, bool)]) {
+    for (name, set) in params {
+        if *set {
+            log::warn!(
+                "{} is set but has no effect with damping_curve=\"{}\"",
+                name,
+                curve
+            );
         }
-        "dual" => {
-            let unused: Vec<&str> = [
-                cli.time_constant_ms.map(|_| "--time-constant-ms"),
-                cli.stop_threshold.map(|_| "--stop-threshold"),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            for p in &unused {
-                log::warn!("{} has no effect with damping_curve=\"dual\"", p);
-            }
-        }
-        "macos" => {
-            let unused: Vec<&str> = [
-                cli.damping.map(|_| "--damping"),
-                cli.phase_threshold.map(|_| "--phase-threshold"),
-                cli.linear_decel_ms.map(|_| "--linear-decel-ms"),
-                cli.linear_stop_hires.map(|_| "--linear-stop-hires"),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            for p in &unused {
-                log::warn!("{} has no effect with damping_curve=\"macos\"", p);
-            }
-        }
+    }
+}
+
+pub fn warn_unused_curve_params(cli: &crate::Args, cfg: &Config, resolved: &crate::ResolvedArgs) {
+    let s = cfg.scroll.as_ref();
+
+    let damping = is_set(cli.damping, s.and_then(|c| c.damping));
+    let phase_threshold = is_set(cli.phase_threshold, s.and_then(|c| c.phase_threshold));
+    let linear_decel_ms = is_set(cli.linear_decel_ms, s.and_then(|c| c.linear_decel_ms));
+    let linear_stop_hires = is_set(cli.linear_stop_hires, s.and_then(|c| c.linear_stop_hires));
+    let time_constant_ms = is_set(cli.time_constant_ms, s.and_then(|c| c.time_constant_ms));
+    let stop_threshold = is_set(cli.stop_threshold, s.and_then(|c| c.stop_threshold));
+
+    match resolved.damping_curve.as_str() {
+        "expo" => warn_unused(
+            "expo",
+            &[
+                ("phase_threshold", phase_threshold),
+                ("linear_decel_ms", linear_decel_ms),
+                ("linear_stop_hires", linear_stop_hires),
+                ("time_constant_ms", time_constant_ms),
+                ("stop_threshold", stop_threshold),
+            ],
+        ),
+        "dual" => warn_unused(
+            "dual",
+            &[
+                ("time_constant_ms", time_constant_ms),
+                ("stop_threshold", stop_threshold),
+            ],
+        ),
+        "macos" => warn_unused(
+            "macos",
+            &[
+                ("damping", damping),
+                ("phase_threshold", phase_threshold),
+                ("linear_decel_ms", linear_decel_ms),
+                ("linear_stop_hires", linear_stop_hires),
+            ],
+        ),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn cli(args: &[&str]) -> crate::Args {
+        crate::Args::parse_from(args)
+    }
+
+    fn scroll_cfg(scroll: ScrollConfig) -> Config {
+        Config {
+            scroll: Some(scroll),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cli_beats_config_beats_default() {
+        let cfg = scroll_cfg(ScrollConfig {
+            damping: Some(0.2),
+            ..Default::default()
+        });
+        assert_eq!(resolve(&cli(&["rinertia"]), &cfg).damping, 0.2);
+        assert_eq!(
+            resolve(&cli(&["rinertia", "--damping", "0.3"]), &cfg).damping,
+            0.3
+        );
+        assert_eq!(
+            resolve(&cli(&["rinertia"]), &Config::default()).damping,
+            DEFAULT_DAMPING
+        );
+    }
+
+    #[test]
+    fn natural_scroll_resolution() {
+        let cfg = scroll_cfg(ScrollConfig {
+            natural_scroll: Some(true),
+            ..Default::default()
+        });
+        assert!(resolve(&cli(&["rinertia"]), &cfg).natural_scroll);
+        assert!(!resolve(&cli(&["rinertia", "--no-natural-scroll"]), &cfg).natural_scroll);
+        assert!(
+            resolve(&cli(&["rinertia", "--natural-scroll"]), &Config::default()).natural_scroll
+        );
+        assert_eq!(
+            resolve(&cli(&["rinertia"]), &Config::default()).natural_scroll,
+            DEFAULT_NATURAL_SCROLL
+        );
+    }
+
+    #[test]
+    fn mode_from_cli_or_enabled_flags() {
+        assert_eq!(
+            resolve(&cli(&["rinertia"]), &Config::default()).mode,
+            "scroll"
+        );
+
+        let both = Config {
+            scroll: Some(ScrollConfig {
+                enabled: Some(true),
+                ..Default::default()
+            }),
+            pointer: Some(PointerConfig {
+                enabled: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(resolve(&cli(&["rinertia"]), &both).mode, "both");
+
+        let pointer_only = Config {
+            scroll: Some(ScrollConfig {
+                enabled: Some(false),
+                ..Default::default()
+            }),
+            pointer: Some(PointerConfig {
+                enabled: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(resolve(&cli(&["rinertia"]), &pointer_only).mode, "pointer");
+
+        assert_eq!(
+            resolve(&cli(&["rinertia", "--mode", "pointer"]), &Config::default()).mode,
+            "pointer"
+        );
+    }
+
+    #[test]
+    fn toml_round_trip() {
+        let cfg: Config = toml::from_str(
+            r#"
+            log_level = "debug"
+            [scroll]
+            damping = 0.07
+            natural_scroll = true
+            "#,
+        )
+        .unwrap();
+        let r = resolve(&cli(&["rinertia"]), &cfg);
+        assert_eq!(r.damping, 0.07);
+        assert!(r.natural_scroll);
+        assert_eq!(r.log_level, "debug");
     }
 }

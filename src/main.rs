@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use log;
 use std::sync::mpsc;
 use std::thread;
 
@@ -107,6 +106,10 @@ pub struct Args {
     #[arg(long)]
     pub natural_scroll: bool,
 
+    /// Disable natural scrolling direction (overrides config file and auto-detection)
+    #[arg(long)]
+    pub no_natural_scroll: bool,
+
     /// Dry mode: don't create virtual device, only log
     #[arg(long)]
     pub dry: bool,
@@ -195,7 +198,7 @@ fn main() -> Result<()> {
     if cli.config.is_some() && !config_missing {
         log::info!("Loaded config: {}", cli.config.as_deref().unwrap());
     }
-    config::warn_unused_curve_params(&cli, &args);
+    config::warn_unused_curve_params(&cli, &cfg, &args);
 
     let touchpad_path =
         device_discovery::find_touchpad(args.device.as_deref(), args.device_name.as_deref())?;
@@ -206,8 +209,9 @@ fn main() -> Result<()> {
         .and_then(|f| f.to_str())
         .unwrap_or("event0");
 
-    let user_explicit =
-        cli.natural_scroll || cfg.scroll.as_ref().and_then(|s| s.natural_scroll).is_some();
+    let user_explicit = cli.natural_scroll
+        || cli.no_natural_scroll
+        || cfg.scroll.as_ref().and_then(|s| s.natural_scroll).is_some();
 
     if let Some(detected) = natural_scroll::detect(sysname) {
         if user_explicit && args.natural_scroll != detected {
