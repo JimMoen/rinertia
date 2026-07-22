@@ -112,8 +112,11 @@ pub fn run_listener(
     let mut ptr_vy: f64 = 0.0;
     let mut ptr_prev_ts = time::SystemTime::UNIX_EPOCH;
 
-    let mut scroll_prev_y: i32 = 0;
-    let mut scroll_prev_x: i32 = 0;
+    // Anchors for two-finger scroll deltas. None until the first ABS event of a
+    // gesture arrives — seeding from the last one-finger position is wrong when
+    // the kernel jumps ABS_X/Y as the second finger lands (garbage first delta).
+    let mut scroll_prev_y: Option<i32> = None;
+    let mut scroll_prev_x: Option<i32> = None;
 
     let mut multitouch_ts: u64 = 0;
     let mut current_ts = time::SystemTime::UNIX_EPOCH;
@@ -137,9 +140,11 @@ pub fn run_listener(
                             }
                             ListenerState::TwoFingerScroll => {
                                 let ts_us = timestamp_to_us(current_ts);
-                                let delta = (val - scroll_prev_x) as f64;
-                                scroll_ring_x.push(delta, ts_us);
-                                scroll_prev_x = val;
+                                if let Some(prev) = scroll_prev_x {
+                                    let delta = (val - prev) as f64;
+                                    scroll_ring_x.push(delta, ts_us);
+                                }
+                                scroll_prev_x = Some(val);
                             }
                             ListenerState::Idle => {}
                         }
@@ -152,9 +157,11 @@ pub fn run_listener(
                             }
                             ListenerState::TwoFingerScroll => {
                                 let ts_us = timestamp_to_us(current_ts);
-                                let delta = (val - scroll_prev_y) as f64;
-                                scroll_ring_y.push(delta, ts_us);
-                                scroll_prev_y = val;
+                                if let Some(prev) = scroll_prev_y {
+                                    let delta = (val - prev) as f64;
+                                    scroll_ring_y.push(delta, ts_us);
+                                }
+                                scroll_prev_y = Some(val);
                             }
                             ListenerState::Idle => {}
                         }
@@ -220,8 +227,8 @@ pub fn run_listener(
                             state = ListenerState::TwoFingerScroll;
                             scroll_ring_y.clear();
                             scroll_ring_x.clear();
-                            scroll_prev_y = ptr_y;
-                            scroll_prev_x = ptr_x;
+                            scroll_prev_y = None;
+                            scroll_prev_x = None;
                             log::debug!("State -> TwoFingerScroll");
                         } else {
                             if state == ListenerState::TwoFingerScroll && enable_scroll {
@@ -290,22 +297,24 @@ pub fn run_listener(
             }
         }
 
-        if state == ListenerState::OneFingerMove && enable_pointer {
-            if ptr_x != ptr_prev_x || ptr_y != ptr_prev_y {
-                let dt = current_ts
-                    .duration_since(ptr_prev_ts)
-                    .unwrap_or_default()
-                    .as_secs_f64();
-                if dt > 0.0 {
-                    ptr_vx = (ptr_x - ptr_prev_x) as f64 / dt;
-                    ptr_vy = (ptr_y - ptr_prev_y) as f64 / dt;
-                }
-                ptr_prev_x = ptr_x;
-                ptr_prev_y = ptr_y;
-                ptr_prev_ts = current_ts;
+        if state == ListenerState::OneFingerMove
+            && enable_pointer
+            && (ptr_x != ptr_prev_x || ptr_y != ptr_prev_y)
+        {
+            let dt = current_ts
+                .duration_since(ptr_prev_ts)
+                .unwrap_or_default()
+                .as_secs_f64();
+            if dt > 0.0 {
+                ptr_vx = (ptr_x - ptr_prev_x) as f64 / dt;
+                ptr_vy = (ptr_y - ptr_prev_y) as f64 / dt;
             }
+            ptr_prev_x = ptr_x;
+            ptr_prev_y = ptr_y;
+            ptr_prev_ts = current_ts;
         }
     }
 
     log::info!("Touchpad event stream ended");
 }
+

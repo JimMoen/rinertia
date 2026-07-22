@@ -22,7 +22,7 @@ pub fn run_engine(
     args: &crate::ResolvedArgs,
 ) {
     let damping_curve = args.damping_curve.as_str();
-    let retention = (1.0 - args.damping.clamp(0.0, 0.99)) as f64;
+    let retention = 1.0 - args.damping.clamp(0.0, 0.99);
     let phase_threshold = args.phase_threshold;
     let linear_decel_ms = args.linear_decel_ms as f64;
     let linear_stop_hires = args.linear_stop_hires;
@@ -385,13 +385,19 @@ pub fn run_engine(
                     }
                 }
 
-                let decel_factor = 1.0 - pointer_drag;
-                vx *= decel_factor;
-                vy *= decel_factor;
+                let dt = last_tick.elapsed().as_secs_f64();
                 last_tick = Instant::now();
 
-                let dx = (vx * pointer_speed_factor).round() as i32;
-                let dy = (vy * pointer_speed_factor).round() as i32;
+                // Decay and displacement are scaled by the actual elapsed time so
+                // a late or early tick does not change the decay curve. At the
+                // nominal 60Hz tick this matches the old fixed-step behavior.
+                let ticks = dt * 60.0;
+                let decel_factor = (1.0 - pointer_drag).powf(ticks);
+                vx *= decel_factor;
+                vy *= decel_factor;
+
+                let dx = (vx * pointer_speed_factor * ticks).round() as i32;
+                let dy = (vy * pointer_speed_factor * ticks).round() as i32;
 
                 if dx == 0 && dy == 0 {
                     log::debug!("PointerMomentum: velocity decayed to zero");
