@@ -60,7 +60,7 @@ pub fn find_touchpad(device_path: Option<&str>, name_filter: Option<&str>) -> Re
         bail!("No touchpad device found (looked for BTN_TOOL_FINGER + BTN_TOUCH)");
     }
 
-    candidates.sort_by(|a, b| b.2.cmp(&a.2));
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.2));
 
     let (path, name, _) = candidates.into_iter().next().unwrap();
     log::info!("Auto-detected touchpad: {} [{}]", path.display(), name);
