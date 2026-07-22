@@ -318,3 +318,69 @@ pub fn run_listener(
     log::info!("Touchpad event stream ended");
 }
 
+#[cfg(test)]
+mod tests {
+    use super::RingBuffer;
+
+    const FACTOR: f64 = 1.5;
+    const STALE_US: u64 = 150_000;
+
+    #[test]
+    fn empty_buffer_yields_zero_velocity() {
+        let rb = RingBuffer::new();
+        assert_eq!(rb.compute_velocity(FACTOR, 0, STALE_US), 0.0);
+    }
+
+    #[test]
+    fn single_sample_yields_zero_velocity() {
+        let mut rb = RingBuffer::new();
+        rb.push(10.0, 1_000);
+        assert_eq!(rb.compute_velocity(FACTOR, 1_000, STALE_US), 0.0);
+    }
+
+    #[test]
+    fn computes_velocity_from_sample_window() {
+        let mut rb = RingBuffer::new();
+        rb.push(10.0, 0);
+        rb.push(10.0, 10_000);
+        rb.push(10.0, 20_000);
+        // 20 tp units over 20ms = 1000 tp/s, * 1.5 = 1500 hires/s
+        let v = rb.compute_velocity(FACTOR, 20_000, STALE_US);
+        assert!((v - 1500.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stale_newest_sample_yields_zero() {
+        let mut rb = RingBuffer::new();
+        rb.push(10.0, 0);
+        rb.push(10.0, 10_000);
+        // newest sample is 200ms old > 150ms stale window
+        assert_eq!(rb.compute_velocity(FACTOR, 210_000, STALE_US), 0.0);
+    }
+
+    #[test]
+    fn stale_tail_samples_dilute_velocity() {
+        let mut rb = RingBuffer::new();
+        rb.push(100.0, 0);
+        rb.push(10.0, 200_000);
+        rb.push(10.0, 210_000);
+        // only the newest sample's staleness is checked; the window spans
+        // t=0..210ms with 20 units of movement: 20/0.21s * 1.5 ≈ 142.86
+        let v = rb.compute_velocity(FACTOR, 210_000, STALE_US);
+        assert!((v - 142.857).abs() < 0.001);
+    }
+
+    #[test]
+    fn ring_wrap_discards_oldest_sample() {
+        let mut rb = RingBuffer::new();
+        rb.push(1.0, 0);
+        rb.push(10.0, 10_000);
+        rb.push(10.0, 20_000);
+        rb.push(10.0, 30_000);
+        rb.push(10.0, 40_000);
+        // capacity is 4: the 1.0 sample at t=0 is gone;
+        // 30 units over 30ms = 1000 tp/s * 1.5 = 1500
+        let v = rb.compute_velocity(FACTOR, 40_000, STALE_US);
+        assert!((v - 1500.0).abs() < 1e-9);
+    }
+}

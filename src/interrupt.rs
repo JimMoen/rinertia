@@ -1,35 +1,26 @@
 use crate::MomentumMessage;
 use evdev::{Device, InputEventKind, Key, RelativeAxisType};
+use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::thread;
 
 pub fn run_interrupt_detector(tx: mpsc::Sender<MomentumMessage>, touchpad_phys: Option<&str>) {
-    let devices = find_interrupt_devices(touchpad_phys);
+    let mut devices = find_interrupt_devices(touchpad_phys);
     if devices.is_empty() {
         log::warn!("No interrupt devices found");
         return;
     }
 
-    let mut handles = Vec::new();
-    for (path, mut device) in devices {
-        let tx = tx.clone();
-        let name = device.name().unwrap_or("?").to_string();
-        log::info!("Interrupt monitor: {} [{}]", name, path.display());
-        handles.push(
-            thread::Builder::new()
-                .name(format!("interrupt-{}", name))
-                .spawn(move || {
-                    monitor_device(&mut device, &tx, &name);
-                }),
+    for (path, device) in &devices {
+        log::info!(
+            "Interrupt monitor: {} [{}]",
+            device.name().unwrap_or("?"),
+            path.display()
         );
     }
 
-    for h in handles {
-        if let Ok(h) = h {
-            let _ = h.join();
-        }
-    }
+    monitor_devices(&mut devices, &tx);
 }
 
 fn find_interrupt_devices(touchpad_phys: Option<&str>) -> Vec<(PathBuf, Device)> {
@@ -60,12 +51,11 @@ fn find_interrupt_devices(touchpad_phys: Option<&str>) -> Vec<(PathBuf, Device)>
 
         // Exclude the touchpad's own physical device — its auxiliary mouse interface
         // would otherwise trigger false interrupts during normal touchpad use.
-        if let Some(tp_phys) = touchpad_phys {
-            if let Some(phys) = device.physical_path() {
-                if phys == tp_phys {
-                    continue;
-                }
-            }
+        if let Some(tp_phys) = touchpad_phys
+            && let Some(phys) = device.physical_path()
+            && phys == tp_phys
+        {
+            continue;
         }
 
         if is_keyboard(&device) || is_external_mouse(&device) {
@@ -85,40 +75,98 @@ fn is_keyboard(device: &Device) -> bool {
 
 fn is_external_mouse(device: &Device) -> bool {
     let keys = device.supported_keys();
-    let has_btn_left = keys.as_ref().map_or(false, |k| k.contains(Key::BTN_LEFT));
+    let has_btn_left = keys.as_ref().is_some_and(|k| k.contains(Key::BTN_LEFT));
     if !has_btn_left {
         return false;
     }
 
     let has_rel_x = device
         .supported_relative_axes()
-        .map_or(false, |r| r.contains(RelativeAxisType::REL_X));
+        .is_some_and(|r| r.contains(RelativeAxisType::REL_X));
     if !has_rel_x {
         return false;
     }
 
     let is_touchpad = keys
         .as_ref()
-        .map_or(false, |k| k.contains(Key::BTN_TOOL_FINGER));
+        .is_some_and(|k| k.contains(Key::BTN_TOOL_FINGER));
     !is_touchpad
 }
 
-fn monitor_device(device: &mut Device, tx: &mpsc::Sender<MomentumMessage>, name: &str) {
+// Single-threaded poll loop over all keyboards/mice; replaces the previous
+// one-thread-per-device design (a desktop can have half a dozen such devices).
+fn monitor_devices(devices: &mut Vec<(PathBuf, Device)>, tx: &mpsc::Sender<MomentumMessage>) {
     loop {
-        match device.fetch_events() {
-            Ok(events) => {
-                for event in events {
-                    if is_interrupt_event(&event) {
-                        if tx.send(MomentumMessage::Stop).is_err() {
-                            log::debug!("Interrupt channel closed for {}", name);
-                            return;
-                        }
-                    }
-                }
-            }
+        let mut poll_fds: Vec<PollFd> = devices
+            .iter()
+            .map(|(_, d)| {
+                // SAFETY: the fd is owned by `d`, which outlives the poll call.
+                let fd = unsafe { BorrowedFd::borrow_raw(d.as_raw_fd()) };
+                PollFd::new(fd, PollFlags::POLLIN)
+            })
+            .collect();
+
+        match poll(&mut poll_fds, PollTimeout::NONE) {
+            Ok(_) => {}
+            Err(nix::errno::Errno::EINTR) => continue,
             Err(e) => {
-                log::error!("Error reading {}: {}", name, e);
+                log::error!("Interrupt poll failed: {}", e);
+                return;
+            }
+        }
+
+        let mut stop = false;
+        let mut remove_idx: Option<usize> = None;
+
+        for (i, pfd) in poll_fds.iter().enumerate() {
+            let Some(revents) = pfd.revents() else {
+                continue;
+            };
+
+            if revents.intersects(PollFlags::POLLERR | PollFlags::POLLHUP) {
+                log::error!(
+                    "Interrupt device gone: {} [{}]",
+                    devices[i].1.name().unwrap_or("?"),
+                    devices[i].0.display()
+                );
+                remove_idx = Some(i);
                 break;
+            }
+            if !revents.contains(PollFlags::POLLIN) {
+                continue;
+            }
+
+            let (interrupted, read_err) = {
+                let device = &mut devices[i].1;
+                match device.fetch_events() {
+                    Ok(events) => {
+                        let interrupted = events.into_iter().any(|e| is_interrupt_event(&e));
+                        (interrupted, None)
+                    }
+                    Err(e) => (false, Some(e)),
+                }
+            };
+
+            if let Some(e) = read_err {
+                log::error!("Error reading {}: {}", devices[i].0.display(), e);
+                remove_idx = Some(i);
+                break;
+            }
+            if interrupted && tx.send(MomentumMessage::Stop).is_err() {
+                log::debug!("Interrupt channel closed");
+                stop = true;
+                break;
+            }
+        }
+
+        if stop {
+            return;
+        }
+        if let Some(i) = remove_idx {
+            devices.swap_remove(i);
+            if devices.is_empty() {
+                log::warn!("No interrupt devices left");
+                return;
             }
         }
     }

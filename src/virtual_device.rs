@@ -49,24 +49,18 @@ impl VirtualDevice {
             ),
         };
 
-        let mut events = vec![InputEvent::new(
-            EventType::RELATIVE,
-            hires_axis.0,
-            hires_value,
-        )];
+        let hires_ev = InputEvent::new(EventType::RELATIVE, hires_axis.0, hires_value);
+        let syn_ev = InputEvent::new(EventType::SYNCHRONIZATION, Synchronization::SYN_REPORT.0, 0);
 
+        // libinput dedupes the legacy low-res wheel when hi-res is present, so
+        // emitting both keeps evdev-only consumers working without double scroll.
         let lores = hires_value / 120;
         if lores != 0 {
-            events.push(InputEvent::new(EventType::RELATIVE, lores_axis.0, lores));
+            let lores_ev = InputEvent::new(EventType::RELATIVE, lores_axis.0, lores);
+            self.device.emit(&[hires_ev, lores_ev, syn_ev])?;
+        } else {
+            self.device.emit(&[hires_ev, syn_ev])?;
         }
-
-        events.push(InputEvent::new(
-            EventType::SYNCHRONIZATION,
-            Synchronization::SYN_REPORT.0,
-            0,
-        ));
-
-        self.device.emit(&events)?;
         Ok(())
     }
 

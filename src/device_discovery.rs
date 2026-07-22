@@ -43,9 +43,9 @@ pub fn find_touchpad(device_path: Option<&str>, name_filter: Option<&str>) -> Re
             continue;
         }
 
-        let has_mt = device.supported_absolute_axes().map_or(false, |axes| {
-            axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X)
-        });
+        let has_mt = device
+            .supported_absolute_axes()
+            .is_some_and(|axes| axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X));
 
         log::debug!(
             "Touchpad candidate: {} [{}] multitouch={}",
